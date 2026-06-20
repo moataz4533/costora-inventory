@@ -3,72 +3,47 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import { 
   Package, ArrowRightLeft, Store, History, FileText,
   AlertCircle, Settings, ListPlus, Building2, Trash2, LayoutDashboard,
-  ClipboardCheck, TrendingUp, AlertTriangle, ChevronDown, Download, X, RefreshCw
+  ClipboardCheck, TrendingUp, AlertTriangle, ChevronDown, Download, X, RefreshCw, LogOut
 } from 'lucide-react';
 
 // ==========================================
-// 🔐 إعدادات Supabase (جاهزة ومؤمنة)
+// 🔐 إعدادات Supabase 
 // ==========================================
-const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || 'https://qxikwycygpxoqtxcnwiq.supabase.co';
-const supabaseKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_VJSMTH_X98CcOLjSaXZpTw_tD85qj0d';
+const supabaseUrl = 'https://qxikwycygpxoqtxcnwiq.supabase.co';
+const supabaseKey = 'sb_publishable_VJSMTH_X98CcOLjSaXZpTw_tD85qj0d';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ==========================================
-// 🧠 طبقة قاعدة البيانات السحابية
+// 🧠 طبقة قاعدة البيانات
 // ==========================================
 const getRestId = () => localStorage.getItem('costora_inv_restaurant_id');
 
 const DB = {
-  async init() {
-    return getRestId() !== null;
-  },
-
   async getSettings() {
     const id = getRestId();
     if (!id) return null;
     return { businessName: localStorage.getItem('costora_inv_restaurant_name') };
   },
 
-  async saveOnboarding(businessName, firstBranch) {
-    const { data: rest, error: err1 } = await supabase.from('restaurants')
-      .insert({ name: businessName }).select().single();
-    if (err1) throw err1;
-
-    localStorage.setItem('costora_inv_restaurant_id', rest.id);
-    localStorage.setItem('costora_inv_restaurant_name', rest.name);
-
-    const { error: err2 } = await supabase.from('branches')
-      .insert({ name: firstBranch, restaurant_id: rest.id });
-    if (err2) throw err2;
-
-    return true;
-  },
-
   async getBranches() {
-    const { data } = await supabase.from('branches')
-      .select('*').eq('restaurant_id', getRestId()).order('created_at', { ascending: true });
+    const { data } = await supabase.from('branches').select('*').eq('restaurant_id', getRestId()).order('created_at', { ascending: true });
     return data || [];
   },
   
   async addBranch(name) {
-    const { data } = await supabase.from('branches')
-      .insert({ name, restaurant_id: getRestId() }).select().single();
+    const { data } = await supabase.from('branches').insert({ name, restaurant_id: getRestId() }).select().single();
     return data;
   },
 
   async getItems() {
-    const { data } = await supabase.from('items')
-      .select('*').eq('restaurant_id', getRestId()).order('created_at', { ascending: false });
+    const { data } = await supabase.from('items').select('*').eq('restaurant_id', getRestId()).order('created_at', { ascending: false });
     return (data || []).map(i => ({ ...i, par: i.par_level }));
   },
   
   async addItem(itemData) {
     const { data } = await supabase.from('items').insert({
-      restaurant_id: getRestId(),
-      name: itemData.name,
-      unit: itemData.unit,
-      par_level: itemData.par
+      restaurant_id: getRestId(), name: itemData.name, unit: itemData.unit, par_level: itemData.par
     }).select().single();
     return { ...data, par: data.par_level };
   },
@@ -80,14 +55,8 @@ const DB = {
   
   async addTransaction(txData) {
     const { data } = await supabase.from('inventory_transactions').insert({
-      restaurant_id: getRestId(),
-      branch_id: txData.branchId,
-      item_id: txData.itemId,
-      transaction_type: txData.type,
-      qty: txData.qty,
-      unit_cost: txData.unitCost,
-      notes: txData.notes,
-      reference_id: txData.referenceId
+      restaurant_id: getRestId(), branch_id: txData.branchId, item_id: txData.itemId,
+      transaction_type: txData.type, qty: txData.qty, unit_cost: txData.unitCost, notes: txData.notes, reference_id: txData.referenceId
     }).select().single();
     return data;
   },
@@ -95,86 +64,57 @@ const DB = {
   async applyStockCount(branchId, countData) {
     const batchRef = `COUNT-${Math.random().toString(36).substring(2,8).toUpperCase()}`;
     const inserts = countData.filter(item => item.diff !== 0).map(item => ({
-      restaurant_id: getRestId(),
-      branch_id: branchId,
-      item_id: item.itemId,
-      transaction_type: 'ADJUSTMENT',
-      qty: item.diff,
-      unit_cost: item.unitCost,
-      reference_id: batchRef,
-      notes: 'تسوية جرد فعلي'
+      restaurant_id: getRestId(), branch_id: branchId, item_id: item.itemId,
+      transaction_type: 'ADJUSTMENT', qty: item.diff, unit_cost: item.unitCost, reference_id: batchRef, notes: 'تسوية جرد فعلي'
     }));
-
-    if (inserts.length > 0) {
-      await supabase.from('inventory_transactions').insert(inserts);
-    }
+    if (inserts.length > 0) await supabase.from('inventory_transactions').insert(inserts);
     return true;
   },
 
   async getStockBalances(branchId = null) {
-    let query = supabase.from('inventory_transactions')
-      .select('item_id, qty, unit_cost').eq('restaurant_id', getRestId());
-    
+    let query = supabase.from('inventory_transactions').select('item_id, qty, unit_cost').eq('restaurant_id', getRestId());
     if (branchId) query = query.eq('branch_id', branchId);
-    
     const { data } = await query;
     const balances = {}; 
-
     (data || []).forEach(tx => {
       if (!balances[tx.item_id]) balances[tx.item_id] = { qty: 0, totalValue: 0 };
       balances[tx.item_id].qty += Number(tx.qty);
       balances[tx.item_id].totalValue += (Number(tx.qty) * Number(tx.unit_cost));
     });
-
     return balances;
   },
 
   async getTransactions(branchId = null) {
-    let query = supabase.from('inventory_transactions')
-      .select('*').eq('restaurant_id', getRestId()).order('created_at', { ascending: false });
-    
+    let query = supabase.from('inventory_transactions').select('*').eq('restaurant_id', getRestId()).order('created_at', { ascending: false });
     if (branchId) query = query.eq('branch_id', branchId);
-    
     const { data } = await query;
     return (data || []).map(tx => ({
-      id: tx.id,
-      branchId: tx.branch_id,
-      itemId: tx.item_id,
-      type: tx.transaction_type,
-      qty: Number(tx.qty),
-      unitCost: Number(tx.unit_cost),
-      notes: tx.notes,
-      referenceId: tx.reference_id,
-      createdAt: tx.created_at
+      id: tx.id, branchId: tx.branch_id, itemId: tx.item_id, type: tx.transaction_type,
+      qty: Number(tx.qty), unitCost: Number(tx.unit_cost), notes: tx.notes, referenceId: tx.reference_id, createdAt: tx.created_at
     }));
   }
 };
 
-// ==========================================
-// 🛠️ دوال المساعدة للتحميل
-// ==========================================
 function downloadCSV(filename, rows) {
   if (!rows || !rows.length) return;
   const keys = Object.keys(rows[0]);
   const csvContent = '\uFEFF' + [
-    keys.join(','),
-    ...rows.map(row => keys.map(k => `"${String(row[k] || '').replace(/"/g, '""')}"`).join(','))
+    keys.join(','), ...rows.map(row => keys.map(k => `"${String(row[k] || '').replace(/"/g, '""')}"`).join(','))
   ].join('\n');
-  
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const link = document.createElement('a'); link.setAttribute('href', url); link.setAttribute('download', filename);
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
 }
 
 // ==========================================
 // 🎨 واجهة المستخدم (React UI)
 // ==========================================
 export default function App() {
+  const [session, setSession] = useState(null);
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup'
+  const [authForm, setAuthForm] = useState({ email: '', password: '' });
+
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState(null);
   const [branches, setBranches] = useState([]);
@@ -189,23 +129,43 @@ export default function App() {
   const [itemForm, setItemForm] = useState({ name: '', unit: 'كجم', par: '' });
   const [onboardingForm, setOnboardingForm] = useState({ businessName: '', firstBranch: 'المخزن الرئيسي' });
   const [newBranchName, setNewBranchName] = useState('');
-
   const [isCounting, setIsCounting] = useState(false);
   const [countInputs, setCountInputs] = useState({});
-
   const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
 
-  useEffect(() => { loadData(); }, [activeBranch]);
+  // إدارة الجلسات (Auth)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      handleSessionData(session);
+      if (!session) setLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      handleSessionData(session);
+      if (!session) setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSessionData = (sessionObj) => {
+    if (sessionObj?.user?.user_metadata?.restaurant_id) {
+      localStorage.setItem('costora_inv_restaurant_id', sessionObj.user.user_metadata.restaurant_id);
+      localStorage.setItem('costora_inv_restaurant_name', sessionObj.user.user_metadata.restaurant_name || '');
+    }
+  };
+
+  useEffect(() => { if (session) loadData(); }, [session, activeBranch]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const isInitialized = await DB.init();
-      if (!isInitialized) { setSettings(null); setLoading(false); return; }
-
       const fetchedSettings = await DB.getSettings();
+      if (!fetchedSettings) { setSettings(null); setLoading(false); return; }
+
       const fetchedBranches = await DB.getBranches();
-      
       if (!fetchedBranches.length) { setSettings(null); setLoading(false); return; }
 
       let currentBranch = activeBranch;
@@ -215,9 +175,7 @@ export default function App() {
       }
 
       const [fetchedItems, fetchedBalances, fetchedTxs] = await Promise.all([
-        DB.getItems(),
-        DB.getStockBalances(currentBranch),
-        DB.getTransactions(currentBranch)
+        DB.getItems(), DB.getStockBalances(currentBranch), DB.getTransactions(currentBranch)
       ]);
       
       setSettings(fetchedSettings);
@@ -226,12 +184,10 @@ export default function App() {
       setBalances(fetchedBalances);
       setTransactions(fetchedTxs);
       
-      if (!txForm.itemId && fetchedItems.length > 0) {
-        setTxForm(prev => ({ ...prev, itemId: fetchedItems[0].id }));
-      }
+      if (!txForm.itemId && fetchedItems.length > 0) setTxForm(prev => ({ ...prev, itemId: fetchedItems[0].id }));
     } catch (err) {
       console.error(err);
-      showAlert('خطأ في الاتصال', 'تأكد من اتصالك بالإنترنت أو إعدادات السحابة.');
+      showAlert('خطأ', 'تأكد من اتصالك بالإنترنت.');
     }
     setLoading(false);
   };
@@ -240,13 +196,52 @@ export default function App() {
   const showAlert = (title, message) => setModal({ isOpen: true, title, message, type: 'alert', onConfirm: null });
   const closeModal = () => setModal(prev => ({ ...prev, isOpen: false }));
 
-  // Onboarding
+  // دوال تسجيل الدخول
+  const handleSignUp = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    const { data, error } = await supabase.auth.signUp({ email: authForm.email, password: authForm.password });
+    if (error) showAlert('خطأ', error.message);
+    else {
+      showAlert('نجاح', 'تم إنشاء الحساب بنجاح. يمكنك تسجيل الدخول الآن.');
+      setAuthMode('login');
+      setAuthForm({email: '', password: ''});
+    }
+    setLoading(false);
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({ email: authForm.email, password: authForm.password });
+    if (error) showAlert('خطأ', 'البريد الإلكتروني أو كلمة المرور غير صحيحة.');
+    setLoading(false);
+  };
+
+  const handleLogout = async () => {
+    setLoading(true);
+    await supabase.auth.signOut();
+    localStorage.removeItem('costora_inv_restaurant_id');
+    localStorage.removeItem('costora_inv_restaurant_name');
+    setSettings(null); setBranches([]); setItems([]); setTransactions([]); setBalances({}); setActiveBranch('');
+    setLoading(false);
+  };
+
   const handleOnboarding = async (e) => {
     e.preventDefault();
     if (!onboardingForm.businessName || !onboardingForm.firstBranch) return;
     setLoading(true);
     try {
-      await DB.saveOnboarding(onboardingForm.businessName, onboardingForm.firstBranch);
+      const { data: rest, error: err1 } = await supabase.from('restaurants').insert({ name: onboardingForm.businessName }).select().single();
+      if (err1) throw err1;
+
+      const { error: err2 } = await supabase.from('branches').insert({ name: onboardingForm.firstBranch, restaurant_id: rest.id });
+      if (err2) throw err2;
+
+      await supabase.auth.updateUser({ data: { restaurant_id: rest.id, restaurant_name: rest.name } });
+      localStorage.setItem('costora_inv_restaurant_id', rest.id);
+      localStorage.setItem('costora_inv_restaurant_name', rest.name);
+      
       await loadData();
     } catch (err) {
       showAlert('خطأ', 'حصل مشكلة أثناء التسجيل.');
@@ -257,11 +252,8 @@ export default function App() {
   const handleAddItem = async (e) => {
     e.preventDefault();
     if (!itemForm.name || !itemForm.unit) return;
-    try {
-      await DB.addItem({ name: itemForm.name, unit: itemForm.unit, par: Number(itemForm.par) || 0 });
-      setItemForm({ name: '', unit: 'كجم', par: '' });
-      loadData();
-    } catch (err) { showAlert('خطأ', 'مقدرناش نضيف الصنف.'); }
+    try { await DB.addItem({ name: itemForm.name, unit: itemForm.unit, par: Number(itemForm.par) || 0 }); setItemForm({ name: '', unit: 'كجم', par: '' }); loadData(); } 
+    catch (err) { showAlert('خطأ', 'مقدرناش نضيف الصنف.'); }
   };
   
   const handleDeleteItem = (id) => {
@@ -285,8 +277,7 @@ export default function App() {
 
     try {
       await DB.addTransaction({
-        type: txForm.type, itemId: txForm.itemId, qty: finalQty,
-        unitCost: Number(txForm.unitCost), branchId: activeBranch, notes: txForm.notes
+        type: txForm.type, itemId: txForm.itemId, qty: finalQty, unitCost: Number(txForm.unitCost), branchId: activeBranch, notes: txForm.notes
       });
       setTxForm(prev => ({ ...prev, qty: '', unitCost: '', notes: '' }));
       setActiveTab('balances');
@@ -295,7 +286,7 @@ export default function App() {
   };
 
   const handleApplyCount = () => {
-    showConfirm('اعتماد تسوية الجرد', 'النظام هيسجل الفروقات ويحدث الرصيد تلقائياً. متأكد من الأرقام؟', async () => {
+    showConfirm('اعتماد تسوية الجرد', 'النظام هيحدث الرصيد تلقائياً. متأكد من الأرقام؟', async () => {
       const countData = items.map(item => {
         const b = balances[item.id] || { qty: 0, totalValue: 0 };
         const avgCost = b.qty > 0 ? (b.totalValue / b.qty) : 0;
@@ -304,52 +295,30 @@ export default function App() {
       });
       try {
         await DB.applyStockCount(activeBranch, countData);
-        setIsCounting(false);
-        setCountInputs({});
-        loadData();
-        setActiveTab('balances');
+        setIsCounting(false); setCountInputs({}); loadData(); setActiveTab('balances');
       } catch (err) { showAlert('خطأ', 'مقدرناش نعتمد تسوية الجرد.'); }
       closeModal();
     });
   };
 
-  // 🚀 تصدير الداتا لبرنامج الكوست كنترول
   const exportForCostApp = () => {
     const costAppIngredients = items.map(item => {
       const b = balances[item.id] || { qty: 0, totalValue: 0 };
       const avgCost = b.qty > 0 ? (b.totalValue / b.qty) : 0;
-      return {
-        id: item.id,
-        name: item.name,
-        unit: item.unit,
-        qty: 1, 
-        price: avgCost, 
-        yield: 1, 
-        stock: b.qty, 
-        cat: '',
-        par: item.par
-      };
+      return { id: item.id, name: item.name, unit: item.unit, qty: 1, price: avgCost, yield: 1, stock: b.qty, cat: '', par: item.par };
     });
-
     const exportData = { v: 1, ings: costAppIngredients };
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Costora_Integration_${new Date().toISOString().split('T')[0]}.json`;
+    const link = document.createElement('a'); link.href = url; link.download = `Costora_Integration_${new Date().toISOString().split('T')[0]}.json`;
     link.click();
-    
-    showAlert('تم التصدير بنجاح!', 'افتح "برنامج الكوست كنترول"، ادخل الإعدادات، واعمل "استيراد JSON". السيستم هيحدث أسعار الخامات وأرصدتها من غير ما يمسح الوصفات بتاعتك!');
+    showAlert('تم التصدير بنجاح!', 'افتح "برنامج الكوست كنترول"، ادخل الإعدادات، واعمل "استيراد JSON". الأسعار هتتحدث!');
   };
 
   const exportBalancesCSV = () => {
     const rows = items.map(item => {
       const b = balances[item.id] || { qty: 0, totalValue: 0 };
-      return {
-        'الصنف': item.name, 'الرصيد الفعلي': b.qty.toFixed(2), 'الوحدة': item.unit,
-        'القيمة الإجمالية (ج.م)': b.totalValue.toFixed(2),
-        'حالة المخزون': b.qty <= (item.par || 0) ? 'نواقص' : 'متوفر'
-      };
+      return { 'الصنف': item.name, 'الرصيد الفعلي': b.qty.toFixed(2), 'الوحدة': item.unit, 'القيمة (ج.م)': b.totalValue.toFixed(2), 'حالة المخزون': b.qty <= (item.par || 0) ? 'نواقص' : 'متوفر' };
     });
     downloadCSV(`أرصدة_${currentBranchName}_${new Date().toISOString().split('T')[0]}.csv`, rows);
   };
@@ -358,19 +327,13 @@ export default function App() {
     const typeMap = { 'PURCHASE': 'مشتريات', 'WASTE': 'هالك', 'TRANSFER_OUT': 'تحويل صادر', 'TRANSFER_IN': 'تحويل وارد', 'ADJUSTMENT': 'تسوية' };
     const rows = transactions.map(tx => {
       const item = items.find(i => i.id === tx.itemId);
-      return {
-        'التاريخ': new Date(tx.createdAt).toLocaleString('en-GB'),
-        'النوع': typeMap[tx.type] || tx.type, 'الصنف': item?.name || 'محذوف',
-        'الكمية': tx.qty, 'الوحدة': item?.unit || '', 'السعر': tx.unitCost, 'البيان': tx.notes || ''
-      };
+      return { 'التاريخ': new Date(tx.createdAt).toLocaleString('en-GB'), 'النوع': typeMap[tx.type] || tx.type, 'الصنف': item?.name || 'محذوف', 'الكمية': tx.qty, 'الوحدة': item?.unit || '', 'السعر': tx.unitCost, 'البيان': tx.notes || '' };
     });
     downloadCSV(`حركات_${currentBranchName}_${new Date().toISOString().split('T')[0]}.csv`, rows);
   };
 
   const dashboardStats = useMemo(() => {
-    let totalValue = 0;
-    const lowStockItems = [];
-    const topValuedItems = [];
+    let totalValue = 0; const lowStockItems = []; const topValuedItems = [];
     items.forEach(item => {
       const b = balances[item.id] || { qty: 0, totalValue: 0 };
       totalValue += b.totalValue;
@@ -381,19 +344,45 @@ export default function App() {
     return { totalValue, lowStockItems, topValuedItems: topValuedItems.slice(0, 5) };
   }, [items, balances]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans" dir="rtl"><div className="animate-pulse text-indigo-600 font-bold flex items-center gap-2"><RefreshCw className="animate-spin"/> جاري المزامنة مع السحابة...</div></div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 font-sans" dir="rtl"><div className="animate-pulse text-indigo-600 font-bold flex items-center gap-2"><RefreshCw className="animate-spin"/> جاري التحميل...</div></div>;
 
-  if (!settings) {
+  // شاشة تسجيل الدخول / إنشاء حساب
+  if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-indigo-900 p-4 font-sans" dir="rtl">
         <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md border border-gray-100">
           <div className="flex justify-center mb-6"><div className="bg-indigo-50 p-5 rounded-full text-indigo-600 shadow-inner"><Store size={48} /></div></div>
           <h1 className="text-2xl font-black text-center text-gray-800 mb-2">Costora Inventory</h1>
-          <p className="text-gray-500 text-center text-sm mb-8 font-medium">نظام المخازن السحابي المستقل</p>
+          <p className="text-gray-500 text-center text-sm mb-8 font-medium">نظام المخازن السحابي الموحد</p>
+          <form onSubmit={authMode === 'login' ? handleLogin : handleSignUp} className="space-y-5">
+            <div><label className="block text-sm font-bold text-gray-700 mb-2">البريد الإلكتروني</label><input type="email" required value={authForm.email} onChange={e => setAuthForm({...authForm, email: e.target.value})} className="w-full border-2 border-gray-200 rounded-xl p-3.5 focus:border-indigo-500 outline-none font-semibold" placeholder="name@restaurant.com" /></div>
+            <div><label className="block text-sm font-bold text-gray-700 mb-2">كلمة المرور</label><input type="password" required minLength="6" value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})} className="w-full border-2 border-gray-200 rounded-xl p-3.5 focus:border-indigo-500 outline-none font-semibold" placeholder="******" /></div>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg mt-4 text-lg">
+              {authMode === 'login' ? 'تسجيل الدخول 🚀' : 'إنشاء حساب جديد ✨'}
+            </button>
+          </form>
+          <div className="mt-6 text-center">
+            <button onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
+              {authMode === 'login' ? 'معندكش حساب؟ أنشئ حساب جديد' : 'عندك حساب بالفعل؟ سجل دخول'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // شاشة إعداد المطعم لأول مرة
+  if (!settings) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-indigo-900 p-4 font-sans" dir="rtl">
+        <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md border border-gray-100">
+          <div className="flex justify-center mb-6"><div className="bg-indigo-50 p-5 rounded-full text-indigo-600 shadow-inner"><Store size={48} /></div></div>
+          <h1 className="text-2xl font-black text-center text-gray-800 mb-2">إعداد مساحة العمل</h1>
+          <p className="text-gray-500 text-center text-sm mb-8 font-medium">سجل بيانات نشاطك لربطها بحسابك</p>
           <form onSubmit={handleOnboarding} className="space-y-5">
             <div><label className="block text-sm font-bold text-gray-700 mb-2">اسم النشاط</label><input type="text" required value={onboardingForm.businessName} onChange={e => setOnboardingForm({...onboardingForm, businessName: e.target.value})} className="w-full border-2 border-gray-200 rounded-xl p-3.5 focus:border-indigo-500 outline-none font-semibold" placeholder="مثال: GreekClub" /></div>
-            <div><label className="block text-sm font-bold text-gray-700 mb-2">اسم الفرع</label><input type="text" required value={onboardingForm.firstBranch} onChange={e => setOnboardingForm({...onboardingForm, firstBranch: e.target.value})} className="w-full border-2 border-gray-200 rounded-xl p-3.5 focus:border-indigo-500 outline-none font-semibold" placeholder="مثال: فرع القاهرة" /></div>
-            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg mt-4 text-lg">ابدأ الاستخدام 🚀</button>
+            <div><label className="block text-sm font-bold text-gray-700 mb-2">اسم الفرع الأول</label><input type="text" required value={onboardingForm.firstBranch} onChange={e => setOnboardingForm({...onboardingForm, firstBranch: e.target.value})} className="w-full border-2 border-gray-200 rounded-xl p-3.5 focus:border-indigo-500 outline-none font-semibold" placeholder="مثال: فرع القاهرة" /></div>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg mt-4 text-lg">البدء في استخدام النظام 🚀</button>
           </form>
         </div>
       </div>
@@ -411,13 +400,21 @@ export default function App() {
               <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 text-white p-2.5 rounded-xl shadow-sm"><Store size={22} /></div>
               <div><h1 className="font-black text-lg text-gray-900 leading-tight">{settings.businessName}</h1><p className="text-[11px] text-emerald-600 font-bold flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> متصل بـ Supabase</p></div>
             </div>
-            <div className="relative md:hidden"><select value={activeBranch} onChange={e => setActiveBranch(e.target.value)} className="appearance-none bg-slate-100 border border-slate-200 text-slate-800 text-sm font-bold rounded-lg pl-8 pr-4 py-2 outline-none"><option value="">كل الفروع</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select><ChevronDown size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" /></div>
+            <div className="flex items-center gap-2 md:hidden">
+              <select value={activeBranch} onChange={e => setActiveBranch(e.target.value)} className="appearance-none bg-slate-100 border border-slate-200 text-slate-800 text-sm font-bold rounded-lg pl-8 pr-4 py-2 outline-none"><option value="">كل الفروع</option>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
+              <button onClick={handleLogout} className="text-rose-500 p-2 bg-rose-50 rounded-lg border border-rose-200"><LogOut size={16}/></button>
+            </div>
           </div>
-          <div className="hidden md:flex items-center gap-2 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
-            <button onClick={() => setActiveBranch('')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeBranch === '' ? 'bg-white text-indigo-700 shadow-md ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-800'}`}>الكل</button>
-            {branches.map(branch => (
-              <button key={branch.id} onClick={() => setActiveBranch(branch.id)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeBranch === branch.id ? 'bg-white text-indigo-700 shadow-md ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-800'}`}>{branch.name}</button>
-            ))}
+          <div className="hidden md:flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
+              <button onClick={() => setActiveBranch('')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeBranch === '' ? 'bg-white text-indigo-700 shadow-md ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-800'}`}>الكل</button>
+              {branches.map(branch => (
+                <button key={branch.id} onClick={() => setActiveBranch(branch.id)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeBranch === branch.id ? 'bg-white text-indigo-700 shadow-md ring-1 ring-black/5' : 'text-gray-500 hover:text-gray-800'}`}>{branch.name}</button>
+              ))}
+            </div>
+            <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 bg-rose-50 px-3 py-2 rounded-lg transition-all shadow-sm">
+               <LogOut size={16}/> خروج
+            </button>
           </div>
         </div>
       </header>
@@ -632,7 +629,7 @@ export default function App() {
               <div className="absolute -right-10 -top-10 opacity-10"><Settings size={150} /></div>
               <h2 className="font-black text-xl mb-2 flex items-center gap-2 relative z-10"><RefreshCw size={22}/> الربط ببرنامج الكوست كنترول</h2>
               <p className="text-indigo-100 mb-6 font-medium text-sm relative z-10 leading-relaxed">
-                تقدر تصدّر كل الخامات اللي متكودة هنا بأرصدتها ومتوسط تكلفتها الحالية لملف ترفعه في برنامج "الكوست كنترول" عشان الأسعار تتحدث أوتوماتيك!
+                تقدر تصدّر كل الخامات اللي متكودة هنا بأرصدتها ومتوسط تكلفتها الحالية. خد الملف ده ارفعه في برنامج "الكوست كنترول" عشان الأسعار تتحدث أوتوماتيك للريسبيز والأطباق!
               </p>
               <button onClick={exportForCostApp} className="w-full bg-white text-indigo-800 hover:bg-indigo-50 font-bold px-6 py-4 rounded-xl shadow-md text-sm transition-all flex items-center justify-center gap-2 relative z-10">
                 <Download size={18}/> تحميل داتا المخازن للكوست (JSON)
